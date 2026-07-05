@@ -1,11 +1,4 @@
-"""
-Default parameters from:
-Rodrigues, R.F., Trierweiler, J.O. & Farenzena, M. Parameter estimation and statistical
-analysis of limit cycle models using a local optimization algorithm: applications for
-simplified well models of slugging oil systems. Braz. J. Chem. Eng. (2026).
-https://doi.org/10.1007/s43153-025-00628-2
-"""
-@kwdef struct Fowm <: AbstractLimitCycleModel
+@kwdef struct FowmFriction <: AbstractLimitCycleModel
     ωᵤ::Real = 2.802
     m_lstill::Real = 6.442e1
     C_g::Real = 1.12e-3
@@ -41,6 +34,10 @@ https://doi.org/10.1007/s43153-025-00628-2
     Vₜ::Real = 0.0
     Vₐ::Real = 0.0
     α_lw::Real = 0.0
+    ε::Real = 1.0e-7
+    μ_l::Real = 1.43e-4
+    μ_g::Real = 1.39e-5
+    ξ::Float64 = eps(Float64)
     u0::AbstractVector{<:Real} = [
         4890.431101521542
         1470.428382621798
@@ -48,9 +45,11 @@ https://doi.org/10.1007/s43153-025-00628-2
         3479.00609623567
         1013.4944459459704
         15726.74205428866
+        0.0
+        0.0
     ]
 
-    function Fowm(
+    function FowmFriction(
             ωᵤ,
             m_lstill,
             C_g,
@@ -86,6 +85,10 @@ https://doi.org/10.1007/s43153-025-00628-2
             Vₜ,
             Vₐ,
             α_lw,
+            ε,
+            μ_l,
+            μ_g,
+            ξ,
             u0,
         )
         A = Dᵣ^2 * π / 4
@@ -129,27 +132,32 @@ https://doi.org/10.1007/s43153-025-00628-2
             Vₜ,
             Vₐ,
             α_lw,
-            u0
+            ε,
+            μ_l,
+            μ_g,
+            ξ,
+            u0,
         )
     end
 end
 
 
-function (self::Fowm)(
+function (self::FowmFriction)(
         du::AbstractVector{<:Real},
         u::AbstractVector{<:Real},
         p::AbstractVector{<:Real},
         _
     )::Nothing
+
     (
         ; ρ_l, T, M, θ, Pₛ, Pᵣ, α_gw,
-        ρ_mres, Lₐ, Hₜ, H_pdg, H_vgl,
+        ρ_mres, Lᵣ, Lₜ, Lₐ, Dᵣ, Dₜ,
+        Hₜ, H_pdg, H_vgl, α_lw,
         m_lstill, C_g, C_out, V_eb,
-        ϵ, K_w, Kₐ, Kᵣ, R, g, A,
-        Vᵣ, Vₜ, Vₐ, α_lw,
+        ϵ, K_w, Kₐ, Kᵣ, ε, μ_l, μ_g,
+        A, Vᵣ, Vₜ, Vₐ, R, g, ξ
     ) = self
-
-    m_gb, m_gr, m_lr, m_ga, m_gt, m_lt = u
+    m_gb, m_gr, m_lr, m_ga, m_gt, m_lt, ΔPₜ, ΔPᵣ = u
     ω_gc, z = p
 
     # Pressure
@@ -160,9 +168,9 @@ function (self::Fowm)(
 
     P_eb = m_gb * R * T / (M * V_eb)
     P_rt = ρ_gr * R * T / M
-    P_rb = P_rt + (m_lr + m_lstill) * g * sin(θ) / A
+    P_rb = P_rt + ΔPᵣ + (m_lr + m_lstill) * g * sin(θ) / A
     P_tt = (ρ_gt * R * T) / M
-    P_tb = P_tt + ρ̄ₜ * g * H_vgl
+    P_tb = P_tt + ΔPₜ + ρ̄ₜ * g * H_vgl
     P_pdg = P_tb + ρ_mres * g * (H_pdg - H_vgl)
     P_bh = P_pdg + ρ_mres * g * (Hₜ - H_pdg)
     P_ai = (R * T / (Vₐ * M) + (g * Lₐ / Vₐ)) * m_ga
@@ -186,13 +194,33 @@ function (self::Fowm)(
     ω_gin = α_gw * ωᵣ
     ω_lin = α_lw * ωᵣ
 
-    # Derivative
+    # Friction loss
+    u_sgt = 4 * (ω_iv + ω_gin) / (ρ_gt * π * Dₜ^2)
+    u_slt = 4 * ω_lin / (ρ_l * π * Dₜ^2)
+    ūₜ = u_sgt + u_slt
+    μ̄ₜ = α_gt * μ_g + α_lt * μ_l
+    Reₜ = abs(ρ̄ₜ * ūₜ * Dₜ / μ̄ₜ)
+    inner_logt = max(ξ, ((ε / Dₜ) / 3.7)^1.11 + 6.9 / (Reₜ + ξ))
+    fₜ = (-1.8 * log10(inner_logt))^(-2)
+
+    u_sgr = 4 * (ω_iv + ω_gin) / (ρ_gr * π * Dᵣ^2)
+    u_slr = 4 * ω_lin / (ρ_l * π * Dᵣ^2)
+    ūᵣ = u_sgr + u_slr
+    μ̄ᵣ = α_gr * μ_g + α_lr * μ_l
+    ρ̄ᵣ = (m_gr + m_lr) / Vᵣ
+    Reᵣ = abs(ρ̄ᵣ * ūᵣ * Dᵣ / μ̄ᵣ)
+    inner_logr = max(ξ, ((ε / Dᵣ) / 3.7)^1.11 + 6.9 / (Reᵣ + ξ))
+    fᵣ = (-1.8 * log10(inner_logr))^(-2)
+
+    # Derivatives
     du[1] = (1 - ϵ) * (ω_gwh) - ω_g
     du[2] = ϵ * (ω_gwh) + ω_g - ω_gout
     du[3] = ω_lwh - ω_lout
     du[4] = ω_gc - ω_iv
     du[5] = ω_gin + ω_iv - ω_gwh
     du[6] = ω_lin - ω_lwh
+    du[7] = ΔPₜ - fₜ * Lₜ * ūₜ^2 / Dₜ / ρ̄ₜ
+    du[8] = ΔPᵣ - fᵣ * Lᵣ * ūᵣ^2 / Dᵣ / ρ̄ᵣ
 
     return nothing
 end

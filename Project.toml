@@ -1,9 +1,15 @@
 name = "LimitCycleModels"
 uuid = "97286a4f-5bc4-4901-922b-86599ae4c6b4"
-authors = ["Ricardo França Rodrigues <rica.frodrigues@gmail.com> and contributors"]
 version = "1.0.0-DEV"
+authors = ["Ricardo França Rodrigues <rica.frodrigues@gmail.com> and contributors"]
+
+[deps]
+OrdinaryDiffEqNonlinearSolve = "127b3ac7-2247-4354-8eb6-78cf4e7c58e8"
+OrdinaryDiffEqRosenbrock = "43230ef6-c299-4910-a778-202eb28ce4ce"
 
 [compat]
+OrdinaryDiffEqNonlinearSolve = "2.0.2"
+OrdinaryDiffEqRosenbrock = "2.3.2"
 julia = "1.10.10"
 
 [extras]

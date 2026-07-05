@@ -23,4 +23,8 @@ using Test
         include("fowm.jl")
     end
 
+    @testset "Fowm Friction" begin
+        include("fowm_friction.jl")
+    end
+
 end
