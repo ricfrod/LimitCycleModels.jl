@@ -196,3 +196,36 @@ function (self::Fowm)(
 
     return nothing
 end
+
+
+function (self::Fowm)(u::AbstractVector{<:Real})
+    (
+        ; ρ_l, T, M, θ, ρ_mres, H_pdg, H_vgl,
+        m_lstill, R, g, A, Vᵣ, Vₜ,
+    ) = self
+
+    _, m_gr, m_lr, _, m_gt, m_lt = u
+
+    # Pressure
+    ρ_gr = m_gr / (Vᵣ - (m_lr + m_lstill) / ρ_l)
+    V_gt = Vₜ - m_lt / ρ_l
+    ρ_gt = m_gt / V_gt
+    ρ̄ₜ = (m_gt + m_lt) / Vₜ
+
+    P_rt = ρ_gr * R * T / M
+    P_rb = P_rt + (m_lr + m_lstill) * g * sin(θ) / A
+    P_tt = (ρ_gt * R * T) / M
+    P_tb = P_tt + ρ̄ₜ * g * H_vgl
+    P_pdg = P_tb + ρ_mres * g * (H_pdg - H_vgl)
+
+    return P_rt, P_rb, P_pdg
+end
+
+
+function (self::Fowm)(u::AbstractVector{<:AbstractVector{T}})::Matrix{T} where {T <: Real}
+    pressures = zeros(T, (3, length(u)))
+    for (idx, states) in enumerate(u)
+        pressures[:, idx] .= self(states)
+    end
+    return pressures
+end
